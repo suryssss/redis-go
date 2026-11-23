@@ -1,36 +1,40 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
-	"strings"
+
+	"github.com/suryssss/my_redis_go/internal"
 )
 
 // handle incoming client requests
 func handleConnection(conn net.Conn) {
 	defer conn.Close() // close connection when done
+	reader := bufio.NewReader(conn)
 
-	buf := make([]byte, 1024) // buffer to store client data
-
-	// keep reading data until client disconnects
+	// keep reading commands until client disconnects
 	for {
-		n, err := conn.Read(buf)
+		resp, err := internal.Parse(reader)
 		if err != nil {
-			fmt.Println("Error reading from connection: ", err.Error())
+			if err != io.EOF {
+				fmt.Println("Error reading from connection:", err)
+			}
 			break
 		}
 
-		data := string(buf[:n])
-		fmt.Println("Received data:", data)
+		reply, err := DispatchCommand(resp)
+		if err != nil {
+			fmt.Println("Error dispatching command:", err)
+			break
+		}
 
-		// check for PING command and reply with PONG
-		if strings.Contains(data, "PING") {
-			_, err = conn.Write([]byte("+PONG\r\n"))
-			if err != nil {
-				fmt.Println("Error writing to connection: ", err.Error())
-				break
-			}
+		_, err = conn.Write(reply)
+		if err != nil {
+			fmt.Println("Error writing to connection:", err)
+			break
 		}
 	}
 }
@@ -42,12 +46,13 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
+	defer l.Close()
 
 	// continuously accept new client connections
 	for {
 		conn, err := l.Accept() // wait for client
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
+			fmt.Println("Error accepting connection:", err)
 			break
 		}
 
@@ -55,4 +60,5 @@ func main() {
 		go handleConnection(conn)
 	}
 }
+
 
